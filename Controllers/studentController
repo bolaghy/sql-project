@@ -1,0 +1,168 @@
+const db = require("../config/db");
+
+// const db = mysql 
+
+
+
+// POST endpoint - fixed implementation
+const createStudentData = async (req, res) => {
+  try {
+    // Input validation
+    if (!req.body.name || !req.body.email) {
+      return res.status(400).json({ error: "Name and email are required" });
+    }
+
+    // First check if email already exists
+    const [existing] = await db.query("SELECT * FROM info WHERE email = ?", [
+      req.body.email,
+    ]);
+
+    if (existing.length > 0) {
+      return res
+        .status(409)
+        .json({ error: "Email already exists", existingStudent: existing[0] });
+    }
+
+    const sql = `INSERT INTO info (name, email, age, gender) VALUES (?, ?, ?, ?)`;
+    const values = [
+      req.body.name,
+      req.body.email,
+      req.body.age || null, // Handle optional fields
+      req.body.gender || null,
+    ];
+
+    // Execute the query
+    const [result] = await db.query(sql, values);
+
+    res.status(201).json({
+      success: true,
+      id: result.insertId,
+      ...req.body,
+    });
+  } catch (err) {
+    console.error("Database error:", err);
+    res
+      .status(500)
+      .json({ error: "Failed to add student", details: err.message });
+  }
+};
+
+const getAllStudentsInfo = async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM info");
+    res.status(200).json(rows);
+  } catch (err) {
+    console.error("Database error:", err);
+    res.status(500).json({ error: "Failed to fetch students" });
+  }
+};
+const getSingleStudentDataInfo =  async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM info WHERE id = ?", [
+      req.params.id,
+    ]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    console.error("Database error:", err);
+    res.status(500).json({ error: "Failed to fetch student" });
+  }
+};
+const updateStudentInfo = async (req, res) => {
+  const studentId = req.params.id;
+  const { name, email, age, gender } = req.body;
+
+  try {
+    // 1. Validate required fields
+    if (!name || !email) {
+      return res.status(400).json({ error: "Name and email are required" });
+    }
+
+    // 2. Check if student exists
+    const [existingStudent] = await db.query(
+      "SELECT id FROM info WHERE id = ?",
+      [studentId]
+    );
+
+    if (existingStudent.length === 0) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // 3. Check for duplicate email (excluding current student)
+    const [duplicateEmail] = await db.query(
+      "SELECT id FROM info WHERE email = ? AND id != ?",
+      [email, studentId]
+    );
+
+    if (duplicateEmail.length > 0) {
+      return res.status(409).json({ error: "Email already in use by another student" });
+    }
+
+    // 4. Update the student record
+    const [result] = await db.query(
+      "UPDATE info SET name = ?, email = ?, age = ?, gender = ? WHERE id = ?",
+      [name, email, age || null, gender || null, studentId]
+    );
+
+    // 5. Verify update was successful
+    if (result.affectedRows === 0) {
+      return res.status(500).json({ error: "Failed to update student" });
+    }
+
+    // 6. Return updated student data
+    const [updatedStudent] = await db.query(
+      "SELECT * FROM info WHERE id = ?",
+      [studentId]
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Student updated successfully",
+      student: updatedStudent[0]
+    });
+
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ error: "Internal server error", details: err.message });
+  }
+};
+const deleteStudentInfo =  async (req, res) => {
+  const studentId = req.params.id;
+
+  try {
+    // Check if student exists
+    const [existingStudent] = await db.query(
+      "SELECT id FROM info WHERE id = ?",
+      [studentId]
+    );
+
+    if (existingStudent.length === 0) {
+      return res.status(404).json({ error: "Student not found" });
+    }
+
+    // Delete the student record
+    const [result] = await db.query("DELETE FROM info WHERE id = ?", [
+      studentId,
+    ]);
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({ error: "Failed to delete student" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Student deleted successfully",
+    });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(500).json({ error: "Internal server error", details: err.message });
+  }
+};      
+
+module.exports = {createStudentData, 
+  getAllStudentsInfo,
+  getSingleStudentDataInfo,
+  updateStudentInfo,
+  deleteStudentInfo}
